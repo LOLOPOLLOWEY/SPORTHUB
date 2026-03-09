@@ -66,6 +66,7 @@ export default function App() {
   const [showPassword, setShowPassword] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [dbError, setDbError] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(null);
 
   // Cargar inscriptos desde Supabase
   const loadStudents = async () => {
@@ -160,6 +161,16 @@ export default function App() {
     setSubmitted(false);
     setDbError("");
     setView("home");
+  };
+
+  const handleDelete = async (id) => {
+    try {
+      await sbFetch(`/inscriptos?id=eq.${id}`, { method: "DELETE" });
+      setStudents(prev => prev.filter(s => s.id !== id));
+      setConfirmDelete(null);
+    } catch (e) {
+      setDbError("Error al eliminar. Intentá de nuevo.");
+    }
   };
 
   const filteredStudents = adminFilter === "all" ? students : students.filter((s) => s.sport === adminFilter);
@@ -509,6 +520,15 @@ export default function App() {
                               <div>{s.tutor}</div>
                               <div style={{ color: "#555" }}>{s.tutor_phone}</div>
                             </td>
+                            <td>
+                              <button onClick={() => setConfirmDelete(s.id)}
+                                style={{ background: "none", border: "1px solid #3a1a1a", color: "#e05a5a",
+                                  cursor: "pointer", padding: "6px 10px", fontSize: 13, transition: "all 0.2s" }}
+                                onMouseOver={e => e.target.style.background = "rgba(224,90,90,0.1)"}
+                                onMouseOut={e => e.target.style.background = "none"}>
+                                🗑️
+                              </button>
+                            </td>
                           </tr>
                         );
                       })}
@@ -566,6 +586,30 @@ export default function App() {
               </div>
             </div>
           )}
+        </div>
+      )}
+      {/* Confirm delete modal */}
+      {confirmDelete && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 24 }}>
+          <div style={{ background: "#141414", border: "1px solid #2a2a2a", padding: "36px 32px", maxWidth: 380, width: "100%", textAlign: "center" }}>
+            <div style={{ fontSize: 40, marginBottom: 16 }}>🗑️</div>
+            <h3 style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700, marginBottom: 10 }}>¿Eliminar inscripto?</h3>
+            <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 14, color: "#888", marginBottom: 28 }}>
+              Esta acción no se puede deshacer.
+            </p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setConfirmDelete(null)}
+                style={{ flex: 1, background: "transparent", border: "1px solid #2a2a2a", color: "#888",
+                  padding: "12px", fontFamily: "'DM Sans', sans-serif", fontSize: 14, cursor: "pointer" }}>
+                Cancelar
+              </button>
+              <button onClick={() => handleDelete(confirmDelete)}
+                style={{ flex: 1, background: "#e05a5a", border: "none", color: "#fff",
+                  padding: "12px", fontFamily: "'DM Sans', sans-serif", fontSize: 14, cursor: "pointer", fontWeight: 500 }}>
+                Sí, eliminar
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
