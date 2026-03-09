@@ -29,13 +29,7 @@ function getCategory(age) {
   return CATEGORIES.find((c) => age >= c.min && age <= c.max);
 }
 
-const initialStudents = [
-  { id: 1, name: "Lucía Fernández", dni: "45123456", dob: "2012-03-15", tutor: "Ana Fernández", tutorPhone: "1145678901", sport: "basquet", category: "cadete" },
-  { id: 2, name: "Mateo Gómez", dni: "46234567", dob: "2010-07-22", tutor: "Carlos Gómez", tutorPhone: "1156789012", sport: "voley", category: "cadete" },
-  { id: 3, name: "Valentina Cruz", dni: "47345678", dob: "2015-11-05", tutor: "Marta Cruz", tutorPhone: "1167890123", sport: "natacion", category: "infantil" },
-  { id: 4, name: "Santiago López", dni: "48456789", dob: "2008-01-30", tutor: "Roberto López", tutorPhone: "1178901234", sport: "basquet", category: "juvenil" },
-  { id: 5, name: "Emma Rodríguez", dni: "49567890", dob: "2016-09-18", tutor: "Sofía Rodríguez", tutorPhone: "1189012345", sport: "voley", category: "infantil" },
-];
+const initialStudents = [];
 
 export default function App() {
   const [view, setView] = useState("home");
