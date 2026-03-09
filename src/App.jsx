@@ -1,4 +1,26 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+
+const SUPABASE_URL = "https://rcldtxehnlfgloqiunlw.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJjbGR0eGVobmxmZ2xvcWl1bmx3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwMjEwNjUsImV4cCI6MjA4ODU5NzA2NX0.ZhdhUnGBSHYqT3Y_FKTjOTL8Ud3vN3j8xeGF8Be8Ino";
+
+async function sbFetch(path, options = {}) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1${path}`, {
+    ...options,
+    headers: {
+      "apikey": SUPABASE_KEY,
+      "Authorization": `Bearer ${SUPABASE_KEY}`,
+      "Content-Type": "application/json",
+      "Prefer": options.prefer || "",
+      ...(options.headers || {}),
+    },
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(err);
+  }
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
+}
 
 const SPORTS = [
   { id: "basquet", name: "Básquet", icon: "🏀", color: "#E85A00" },
@@ -29,11 +51,10 @@ function getCategory(age) {
   return CATEGORIES.find((c) => age >= c.min && age <= c.max);
 }
 
-const initialStudents = [];
-
 export default function App() {
   const [view, setView] = useState("home");
-  const [students, setStudents] = useState(initialStudents);
+  const [students, setStudents] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ name: "", dni: "", dob: "", tutor: "", tutorPhone: "", sport: "" });
   const [errors, setErrors] = useState({});
   const [submitted, setSubmitted] = useState(false);
@@ -44,11 +65,31 @@ export default function App() {
   const [loginError, setLoginError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [dbError, setDbError] = useState("");
+
+  // Cargar inscriptos desde Supabase
+  const loadStudents = async () => {
+    setLoading(true);
+    setDbError("");
+    try {
+      const data = await sbFetch("/inscriptos?select=*&order=created_at.desc");
+      setStudents(data || []);
+    } catch (e) {
+      setDbError("No se pudieron cargar los inscriptos.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadStudents();
+  }, []);
 
   const handleAdminLogin = () => {
     if (loginForm.user === ADMIN_CREDENTIALS.user && loginForm.password === ADMIN_CREDENTIALS.password) {
       setIsAdminLogged(true);
       setLoginError("");
+      loadStudents();
     } else {
       setLoginError("Usuario o contraseña incorrectos");
     }
@@ -65,6 +106,7 @@ export default function App() {
     setView(v);
     setMenuOpen(false);
     if (v === "register") setSubmitted(false);
+    if (v === "admin" && isAdminLogged) loadStudents();
   };
 
   const validate = () => {
@@ -82,19 +124,41 @@ export default function App() {
     return e;
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const e = validate();
     if (Object.keys(e).length > 0) { setErrors(e); return; }
     const age = getAge(form.dob);
     const cat = getCategory(age);
-    setStudents((prev) => [...prev, { id: Date.now(), ...form, category: cat?.id || "mayor" }]);
-    setSubmitted(true);
+    setLoading(true);
+    setDbError("");
+    try {
+      await sbFetch("/inscriptos", {
+        method: "POST",
+        prefer: "return=minimal",
+        body: JSON.stringify({
+          name: form.name,
+          dni: form.dni,
+          dob: form.dob,
+          tutor: form.tutor,
+          tutor_phone: form.tutorPhone,
+          sport: form.sport,
+          category: cat?.id || "mayor",
+        }),
+      });
+      await loadStudents();
+      setSubmitted(true);
+    } catch (err) {
+      setDbError("Error al guardar la inscripción. Intentá de nuevo.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const resetForm = () => {
     setForm({ name: "", dni: "", dob: "", tutor: "", tutorPhone: "", sport: "" });
     setErrors({});
     setSubmitted(false);
+    setDbError("");
     setView("home");
   };
 
@@ -109,21 +173,24 @@ export default function App() {
   }));
   const totalStudents = students.length;
 
+  // Last submitted student
+  const lastStudent = students[0];
+
   return (
     <div style={{ fontFamily: "'Georgia', serif", minHeight: "100vh", background: "#0f0f0f", color: "#f0ece4" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=DM+Sans:wght@300;400;500&display=swap');
-
         .btn-primary {
           background: #f0ece4; color: #0f0f0f; border: none; padding: 14px 32px;
           font-family: 'DM Sans', sans-serif; font-size: 15px; font-weight: 500;
-          cursor: pointer; letter-spacing: 0.05em; transition: all 0.2s; width: 100%;
+          cursor: pointer; letter-spacing: 0.05em; transition: all 0.2s;
         }
         .btn-primary:hover { background: #d4c9b8; }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
         .btn-outline {
           background: transparent; color: #f0ece4; border: 1px solid #f0ece4;
           padding: 13px 28px; font-family: 'DM Sans', sans-serif; font-size: 14px;
-          cursor: pointer; letter-spacing: 0.05em; transition: all 0.2s; width: 100%;
+          cursor: pointer; letter-spacing: 0.05em; transition: all 0.2s;
         }
         .btn-outline:hover { background: rgba(240,236,228,0.08); }
         .btn-danger {
@@ -135,8 +202,7 @@ export default function App() {
         .input-field {
           width: 100%; background: #1a1a1a; border: 1px solid #2a2a2a; color: #f0ece4;
           padding: 14px 16px; font-family: 'DM Sans', sans-serif; font-size: 15px;
-          outline: none; transition: border 0.2s; border-radius: 0;
-          -webkit-appearance: none;
+          outline: none; transition: border 0.2s; border-radius: 0; -webkit-appearance: none;
         }
         .input-field:focus { border-color: #f0ece4; }
         .input-field::placeholder { color: #555; }
@@ -176,9 +242,9 @@ export default function App() {
                  color: #888; text-transform: uppercase; display: block; margin-bottom: 8px; }
         .section-tag { font-family: 'DM Sans', sans-serif; font-size: 11px; letter-spacing: 0.15em;
                        color: #555; text-transform: uppercase; margin-bottom: 16px; display: block; }
-        .hamburger { background: none; border: none; cursor: pointer; padding: 8px; color: #f0ece4; }
-        .mobile-menu { position: fixed; top: 64px; left: 0; right: 0; background: #0f0f0f;
-                       border-bottom: 1px solid #1f1f1f; z-index: 100; padding: 12px 0; }
+        .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #333;
+                   border-top-color: #f0ece4; border-radius: 50%; animation: spin 0.7s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
         @media (max-width: 640px) {
           .desktop-nav { display: none !important; }
           .table-scroll { overflow-x: auto; }
@@ -189,8 +255,6 @@ export default function App() {
         }
         @media (min-width: 641px) {
           .mobile-only { display: none !important; }
-          .btn-primary { width: auto; }
-          .btn-outline { width: auto; }
         }
       `}</style>
 
@@ -200,8 +264,6 @@ export default function App() {
           <span style={{ fontSize: 20 }}>⚡</span>
           <span style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 700 }}>SportHub</span>
         </div>
-
-        {/* Desktop nav */}
         <div className="desktop-nav" style={{ display: "flex", gap: 4, alignItems: "center" }}>
           <button className={`nav-link ${view === "home" ? "active" : ""}`} onClick={() => navigate("home")}>Inicio</button>
           <button className={`nav-link ${view === "register" ? "active" : ""}`} onClick={() => navigate("register")}>Inscripción</button>
@@ -210,24 +272,18 @@ export default function App() {
           </button>
           {isAdminLogged && <button className="btn-danger" style={{ marginLeft: 8 }} onClick={handleAdminLogout}>Salir</button>}
         </div>
-
-        {/* Mobile hamburger */}
-        <button className="hamburger mobile-only" onClick={() => setMenuOpen(!menuOpen)}>
+        <button className="mobile-only" onClick={() => setMenuOpen(!menuOpen)}
+          style={{ background: "none", border: "none", color: "#f0ece4", cursor: "pointer", fontSize: 20, padding: 8 }}>
           {menuOpen ? "✕" : "☰"}
         </button>
       </nav>
 
-      {/* Mobile menu */}
       {menuOpen && (
-        <div className="mobile-menu mobile-only">
+        <div className="mobile-only" style={{ position: "fixed", top: 64, left: 0, right: 0, background: "#0f0f0f", borderBottom: "1px solid #1f1f1f", zIndex: 100, padding: "12px 0" }}>
           <button className={`nav-link ${view === "home" ? "active" : ""}`} onClick={() => navigate("home")}>Inicio</button>
           <button className={`nav-link ${view === "register" ? "active" : ""}`} onClick={() => navigate("register")}>Inscripción</button>
-          <button className={`nav-link ${view === "admin" ? "active" : ""}`} onClick={() => navigate("admin")}>
-            {isAdminLogged ? "🔓" : "🔒"} Administración
-          </button>
-          {isAdminLogged && (
-            <button className="nav-link" style={{ color: "#e05a5a" }} onClick={handleAdminLogout}>Cerrar sesión</button>
-          )}
+          <button className={`nav-link ${view === "admin" ? "active" : ""}`} onClick={() => navigate("admin")}>{isAdminLogged ? "🔓" : "🔒"} Administración</button>
+          {isAdminLogged && <button className="nav-link" style={{ color: "#e05a5a" }} onClick={handleAdminLogout}>Cerrar sesión</button>}
         </div>
       )}
 
@@ -243,8 +299,8 @@ export default function App() {
               Inscribite en básquet, vóley o natación. La categoría se asigna automáticamente según tu edad.
             </p>
             <div className="hero-btns" style={{ display: "flex", gap: 12, justifyContent: "center" }}>
-              <button className="btn-primary" style={{ width: "auto", padding: "14px 32px" }} onClick={() => navigate("register")}>Inscribirme ahora</button>
-              <button className="btn-outline" style={{ width: "auto" }} onClick={() => navigate("admin")}>Panel admin</button>
+              <button className="btn-primary" style={{ padding: "14px 32px" }} onClick={() => navigate("register")}>Inscribirme ahora</button>
+              <button className="btn-outline" onClick={() => navigate("admin")}>Panel admin</button>
             </div>
           </div>
 
@@ -256,7 +312,7 @@ export default function App() {
                   <div style={{ fontSize: 32, marginBottom: 14 }}>{sport.icon}</div>
                   <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 700, marginBottom: 6 }}>{sport.name}</div>
                   <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: "#666" }}>
-                    {students.filter((s) => s.sport === sport.id).length} inscriptos
+                    {loading ? <span className="spinner" /> : `${students.filter((s) => s.sport === sport.id).length} inscriptos`}
                   </div>
                 </div>
               ))}
@@ -285,25 +341,19 @@ export default function App() {
               <span className="section-tag">Formulario de inscripción</span>
               <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 34, fontWeight: 900, marginBottom: 36 }}>Inscribite</h2>
               <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-
                 <div>
                   <label className="label">Nombre y Apellido</label>
-                  <input className="input-field" placeholder="Ej: Lucía García" value={form.name}
-                    onChange={(e) => setForm({ ...form, name: e.target.value })} />
+                  <input className="input-field" placeholder="Ej: Lucía García" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
                   {errors.name && <p className="error-text">{errors.name}</p>}
                 </div>
-
                 <div>
                   <label className="label">DNI</label>
-                  <input className="input-field" placeholder="Ej: 45123456" value={form.dni} inputMode="numeric"
-                    onChange={(e) => setForm({ ...form, dni: e.target.value })} />
+                  <input className="input-field" placeholder="Ej: 45123456" value={form.dni} inputMode="numeric" onChange={(e) => setForm({ ...form, dni: e.target.value })} />
                   {errors.dni && <p className="error-text">{errors.dni}</p>}
                 </div>
-
                 <div>
                   <label className="label">Fecha de Nacimiento</label>
-                  <input type="date" className="input-field" value={form.dob}
-                    onChange={(e) => setForm({ ...form, dob: e.target.value })} style={{ colorScheme: "dark" }} />
+                  <input type="date" className="input-field" value={form.dob} onChange={(e) => setForm({ ...form, dob: e.target.value })} style={{ colorScheme: "dark" }} />
                   {errors.dob && <p className="error-text">{errors.dob}</p>}
                   {form.dob && !errors.dob && (() => {
                     const age = getAge(form.dob);
@@ -315,27 +365,21 @@ export default function App() {
                     ) : null;
                   })()}
                 </div>
-
                 <div>
                   <label className="label">Nombre del Tutor/a</label>
-                  <input className="input-field" placeholder="Ej: María García" value={form.tutor}
-                    onChange={(e) => setForm({ ...form, tutor: e.target.value })} />
+                  <input className="input-field" placeholder="Ej: María García" value={form.tutor} onChange={(e) => setForm({ ...form, tutor: e.target.value })} />
                   {errors.tutor && <p className="error-text">{errors.tutor}</p>}
                 </div>
-
                 <div>
                   <label className="label">Teléfono del Tutor/a</label>
-                  <input className="input-field" placeholder="Ej: 1145678901" value={form.tutorPhone} inputMode="numeric"
-                    onChange={(e) => setForm({ ...form, tutorPhone: e.target.value })} />
+                  <input className="input-field" placeholder="Ej: 1145678901" value={form.tutorPhone} inputMode="numeric" onChange={(e) => setForm({ ...form, tutorPhone: e.target.value })} />
                   {errors.tutorPhone && <p className="error-text">{errors.tutorPhone}</p>}
                 </div>
-
                 <div>
                   <label className="label">Elegí tu deporte</label>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {SPORTS.map((sport) => (
-                      <div key={sport.id} className={`sport-card ${form.sport === sport.id ? "selected" : ""}`}
-                        onClick={() => setForm({ ...form, sport: sport.id })}>
+                      <div key={sport.id} className={`sport-card ${form.sport === sport.id ? "selected" : ""}`} onClick={() => setForm({ ...form, sport: sport.id })}>
                         <span style={{ fontSize: 26 }}>{sport.icon}</span>
                         <span style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, fontWeight: 700 }}>{sport.name}</span>
                         {form.sport === sport.id && <span style={{ marginLeft: "auto", color: "#f0ece4" }}>✓</span>}
@@ -344,9 +388,9 @@ export default function App() {
                   </div>
                   {errors.sport && <p className="error-text" style={{ marginTop: 6 }}>{errors.sport}</p>}
                 </div>
-
-                <button className="btn-primary" style={{ marginTop: 8, width: "100%" }} onClick={handleSubmit}>
-                  Confirmar inscripción
+                {dbError && <p className="error-text" style={{ textAlign: "center" }}>{dbError}</p>}
+                <button className="btn-primary" style={{ marginTop: 8, width: "100%" }} onClick={handleSubmit} disabled={loading}>
+                  {loading ? "Guardando..." : "Confirmar inscripción"}
                 </button>
               </div>
             </>
@@ -358,7 +402,7 @@ export default function App() {
                 {form.name} fue inscripto/a en <strong style={{ color: "#f0ece4" }}>{SPORTS.find((s) => s.id === form.sport)?.name}</strong>
               </p>
               <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: "#666", marginBottom: 36 }}>
-                Categoría asignada: <strong style={{ color: "#f0ece4" }}>{CATEGORIES.find((c) => c.id === students[students.length - 1]?.category)?.label}</strong>
+                Categoría asignada: <strong style={{ color: "#f0ece4" }}>{CATEGORIES.find((c) => c.id === lastStudent?.category)?.label}</strong>
               </p>
               <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 300, margin: "0 auto" }}>
                 <button className="btn-primary" onClick={resetForm}>Volver al inicio</button>
@@ -377,25 +421,17 @@ export default function App() {
           <div style={{ border: "1px solid #2a2a2a", background: "#141414", padding: "40px 32px", width: "100%", maxWidth: 400 }}>
             <span className="section-tag">Acceso restringido</span>
             <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 30, fontWeight: 900, marginBottom: 6 }}>Panel Admin</h2>
-            <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: "#555", marginBottom: 32 }}>
-              Ingresá tus credenciales para acceder.
-            </p>
+            <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: "#555", marginBottom: 32 }}>Ingresá tus credenciales para acceder.</p>
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <div>
                 <label className="label">Usuario</label>
-                <input className="input-field" placeholder="admin" value={loginForm.user}
-                  onChange={(e) => setLoginForm({ ...loginForm, user: e.target.value })}
-                  onKeyDown={(e) => e.key === "Enter" && handleAdminLogin()} />
+                <input className="input-field" placeholder="admin" value={loginForm.user} onChange={(e) => setLoginForm({ ...loginForm, user: e.target.value })} onKeyDown={(e) => e.key === "Enter" && handleAdminLogin()} />
               </div>
               <div>
                 <label className="label">Contraseña</label>
                 <div className="pw-wrap">
-                  <input className="input-field" type={showPassword ? "text" : "password"} placeholder="••••••••"
-                    value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
-                    onKeyDown={(e) => e.key === "Enter" && handleAdminLogin()} style={{ paddingRight: 44 }} />
-                  <button className="pw-toggle" onClick={() => setShowPassword(!showPassword)}>
-                    {showPassword ? "🙈" : "👁️"}
-                  </button>
+                  <input className="input-field" type={showPassword ? "text" : "password"} placeholder="••••••••" value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} onKeyDown={(e) => e.key === "Enter" && handleAdminLogin()} style={{ paddingRight: 44 }} />
+                  <button className="pw-toggle" onClick={() => setShowPassword(!showPassword)}>{showPassword ? "🙈" : "👁️"}</button>
                 </div>
               </div>
               {loginError && (
@@ -403,9 +439,7 @@ export default function App() {
                   <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: "#e05a5a" }}>⚠️ {loginError}</p>
                 </div>
               )}
-              <button className="btn-primary" style={{ width: "100%", marginTop: 4 }} onClick={handleAdminLogin}>
-                Ingresar
-              </button>
+              <button className="btn-primary" style={{ width: "100%", marginTop: 4 }} onClick={handleAdminLogin}>Ingresar</button>
             </div>
           </div>
         </div>
@@ -418,11 +452,13 @@ export default function App() {
           <div className="admin-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 36 }}>
             <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 34, fontWeight: 900 }}>Inscriptos</h2>
             <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-              <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: "#555" }}>{totalStudents} alumnos</span>
-              <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: "#444" }}>● admin</span>
+              <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: "#555" }}>{loading ? "..." : `${totalStudents} alumnos`}</span>
+              <button style={{ background: "none", border: "none", color: "#555", cursor: "pointer", fontSize: 18 }} onClick={loadStudents} title="Actualizar">🔄</button>
               <button className="btn-danger" onClick={handleAdminLogout}>Salir</button>
             </div>
           </div>
+
+          {dbError && <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: "#e05a5a", marginBottom: 16 }}>{dbError}</p>}
 
           <div style={{ borderBottom: "1px solid #2a2a2a", marginBottom: 28, display: "flex", gap: 4 }}>
             <button className={`tab-btn ${adminView === "list" ? "active" : ""}`} onClick={() => setAdminView("list")}>Lista</button>
@@ -443,41 +479,45 @@ export default function App() {
                 ))}
               </div>
               <div className="table-scroll" style={{ border: "1px solid #1f1f1f", overflow: "hidden" }}>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Alumno</th>
-                      <th>DNI</th>
-                      <th>Edad</th>
-                      <th>Categoría</th>
-                      <th>Deporte</th>
-                      <th>Tutor</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredStudents.map((s) => {
-                      const age = getAge(s.dob);
-                      const sport = SPORTS.find((sp) => sp.id === s.sport);
-                      const cat = CATEGORIES.find((c) => c.id === s.category);
-                      return (
-                        <tr key={s.id}>
-                          <td style={{ color: "#f0ece4", fontWeight: 500 }}>{s.name}</td>
-                          <td>{s.dni}</td>
-                          <td>{age} años</td>
-                          <td><span className="badge" style={{ background: "#1f1f1f", color: "#aaa" }}>{cat?.label}</span></td>
-                          <td><span className="badge" style={{ background: sport?.color + "22", color: sport?.color }}>{sport?.icon} {sport?.name}</span></td>
-                          <td style={{ fontSize: 12 }}>
-                            <div>{s.tutor}</div>
-                            <div style={{ color: "#555" }}>{s.tutorPhone}</div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {filteredStudents.length === 0 && (
-                      <tr><td colSpan={6} style={{ textAlign: "center", color: "#444", padding: 36 }}>Sin inscriptos</td></tr>
-                    )}
-                  </tbody>
-                </table>
+                {loading ? (
+                  <div style={{ padding: 40, textAlign: "center" }}><span className="spinner" /></div>
+                ) : (
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Alumno</th>
+                        <th>DNI</th>
+                        <th>Edad</th>
+                        <th>Categoría</th>
+                        <th>Deporte</th>
+                        <th>Tutor</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredStudents.map((s) => {
+                        const age = getAge(s.dob);
+                        const sport = SPORTS.find((sp) => sp.id === s.sport);
+                        const cat = CATEGORIES.find((c) => c.id === s.category);
+                        return (
+                          <tr key={s.id}>
+                            <td style={{ color: "#f0ece4", fontWeight: 500 }}>{s.name}</td>
+                            <td>{s.dni}</td>
+                            <td>{age} años</td>
+                            <td><span className="badge" style={{ background: "#1f1f1f", color: "#aaa" }}>{cat?.label}</span></td>
+                            <td><span className="badge" style={{ background: sport?.color + "22", color: sport?.color }}>{sport?.icon} {sport?.name}</span></td>
+                            <td style={{ fontSize: 12 }}>
+                              <div>{s.tutor}</div>
+                              <div style={{ color: "#555" }}>{s.tutor_phone}</div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {filteredStudents.length === 0 && (
+                        <tr><td colSpan={6} style={{ textAlign: "center", color: "#444", padding: 36 }}>Sin inscriptos</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </>
           )}
@@ -508,7 +548,6 @@ export default function App() {
                   </div>
                 ))}
               </div>
-
               <div style={{ border: "1px solid #2a2a2a", background: "#141414", padding: 26 }}>
                 <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, letterSpacing: "0.1em", color: "#555", textTransform: "uppercase", marginBottom: 20 }}>Distribución por categoría</p>
                 {CATEGORIES.map((cat) => {
